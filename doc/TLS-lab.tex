@@ -1,0 +1,66 @@
+\documentclass[11pt]{article}
+\oddsidemargin -0pt
+\evensidemargin -0pt
+\topmargin -20pt
+\textheight 600pt
+\textwidth 460pt
+\usepackage{hyperref}
+
+\begin{document}
+\begin{center}
+{\Large\bf CS 165 Lab \\ Spring 2020\\}
+%{\large\bf Due: December 8, 2006}
+\end{center}
+\vspace{0.25in}
+
+The starter code given to you contains a simple client and server that communicate over a socket in plaintext.
+Obviously, messages sent in plaintext are not secure and can be read by a third party.
+Our goal in this lab is to modify both the client and the server in order to make them communicate securely using TLS.
+
+\section{Running the plaintext client and server}
+\begin{enumerate}
+    \item Download the code from iLearn.
+    \item cd TLSCache/
+    \item Run `source ./scripts/setup.sh'
+    \item cd build/
+    \item Run `./src/server 9999'
+    \item Run `./src/client 127.0.0.1 9999'
+\end{enumerate}
+Note: If you are running the above commands on bolt, you may get an error since the port number 9999 may not be free.
+Try substituting 9999 with another random port number $> 10000$. 
+
+
+\section{Using TLS}
+libtls is a relatively new C library specifically designed to make setting up TLS connections over sockets easy. It is distributed as a part of the LibreSSL suite of cryptographic tools.
+The starter code given to you already contains the latest version of libtls that you can start using immediately. However, we must first create the public and private keys for the client and the server, and obtain a digital certificate for the server.
+
+\subsection{Certificate Authorities and chains of trust}
+A Certificate Authority (CA) is a trusted third party that can issue digital certificates. A digital certificate is used to determine that a public key belongs to the named subject of the certificate. There are two kinds of certificates in use: \textit{root certificates}, that come preinstalled in most browsers and operating systems, and \textit{intermediate certificates}, which are signed by the CA using the root certificate. Nearly all certificates issued to servers on the internet are signed using intermediate certificates, and not the root certificate. Write a short note on why this design is used for issuing certificates. What are the possible security issues that could arise if all server certificates were signed by the root certificate instead? How does using intermediate certificates mitigate these issues?
+
+\subsection{Creating root, intermediate and server certificates}
+\begin{enumerate}
+    \item cd TLSCache/certificates
+    \item Run `make'
+\end{enumerate}
+
+\subsection{Adding TLS to client and server}
+Your task in this section is to modify the client and server code to enable them to communicate over TLS.
+The official documentation for libtls can be found \href{https://man.openbsd.org/tls\_init.3}{here}. You will need the following subset of functions and structs :
+
+\begin{enumerate}
+    \item \textit{tls\_init()}: To initialize the internal libtls structs.
+    \item \textit{struct\ tls\_config}: To set a CA root certificate file.
+    \item \textit{struct\ tls\_ctx}: To store the libtls context returned by \textit{tls\_server()} or \textit{tls\_client()}.
+    \item \textit{tls\_config\_new()}: To create an empty tls\_config struct.
+    \item \textit{tls\_config\_set\_ca\_file()}: To set the CA root certificate file, \textit{root.pem}.
+    \item \textit{tls\_config\_set\_cert\_file()}: To set the server's certificate file, \textit{server.crt}.
+    \item \textit{tls\_config\_set\_key\_file()}: To set the server's public and private keys in file \textit{server.key}.
+    \item \textit{tls\_accept\_socket()}: Analogous to UNIX accept().
+    \item \textit{tls\_client()}: Creates a tls\_ctx struct that can be connected to socket.
+    \item \textit{tls\_configure()}: Applies the configuration in tls\_config to tls\_ctx.
+    \item \textit{tls\_connect\_socket()}: Attaches the tls\_ctx to the socket.
+    \item \textit{tls\_handshake()}: Performs the TLS handshake. \\ May return TLS\_WANT\_POLLIN or TLS\_WANT\_POLLOUT.
+    \item \textit{tls\_read() and tls\_write()}: Similar to libc's read() and write(), securely read and write to and from the socket. May return TLS\_WANT\_POLLIN or TLS\_WANT\_POLLOUT.
+    \item \textit{tls\_close()}: To close and tear down the TLS connection.
+\end{enumerate}
+\end{document}
