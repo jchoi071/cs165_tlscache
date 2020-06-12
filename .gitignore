@@ -1,4 +1,13 @@
-build/
+build/CMakeFiles
+build/CMakeCache.txt
+build/cmake_install.cmake
+build/Makefile
+build/src/CMakeFiles
+build/src/client
+build/src/proxy
+build/src/server
+build/src/Makefile
+build/src/cmake_install.cmake
 extern/cmake
 extern/libressl
 extern/libressl_install

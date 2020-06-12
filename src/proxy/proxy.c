@@ -227,7 +227,7 @@ int main(int argc,  char *argv[])
 		
 		if (found <= 0)
 		{
-			printf("File %s not found\n", buffer);
+			printf("Proxy %i: File %s not found, adding to filter\n", port, buffer);
 			for (int c = 0; c < SIZE; ++c)
 			{
 				bloomFilter[c] = hash[c] | bloomFilter[c];
@@ -235,7 +235,7 @@ int main(int argc,  char *argv[])
 		}
 		else
 		{
-			printf("File %s found\n", buffer);
+			printf("Proxy %i: File %s found in filter\n", port, buffer);
 		}
 		
 

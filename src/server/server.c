@@ -177,7 +177,7 @@ int main(int argc,  char *argv[])
 			 */
 			buffer[rc] = '\0';
 
-			printf("Client sent:  %s\n",buffer);
+			printf("Server received:  %s\n",buffer);
 
 			/*
 			 * write the message to the client, being sure to
