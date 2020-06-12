@@ -1,5 +1,7 @@
 build/
-extern
+extern/cmake
+extern/libressl
+extern/libressl_install
 certificates/*.pem
 certificates/*.key
 certificates/*.crt
