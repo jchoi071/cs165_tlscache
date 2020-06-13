@@ -19,7 +19,7 @@
 static void usage()
 {
 	extern char * __progname;
-	fprintf(stderr, "usage: %s ipaddress portnumber\n", __progname);
+	fprintf(stderr, "usage: %s filename\n", __progname);
 	exit(1);
 }
 
@@ -35,7 +35,7 @@ static u_short hash(char *filename)
 	u_short proxies[6] = {9000, 9001, 9002, 9003, 9004, 9005};
 	int sumHash;
 	int highestHash = 0;
-	u_short highestProxy = 0;
+	u_short highestProxy = proxies[0];
 	for (unsigned int i = 0; i < 6; ++i)
 	{
 		sumHash = 0;
@@ -72,33 +72,11 @@ int main(int argc, char *argv[])
 	struct tls_config *tls_cfg = NULL;
 	struct tls *tls_ctx = NULL;
 	
-	printf("Enter a filename (up to 80 characters): ");
-	gets(buffer);
-	
-	port = hash(buffer);
-	
-	/*
-	if (argc != 3)
+	if (argc != 2)
 		usage();
 
-        p = strtoul(argv[2], &ep, 10);
-        if (*argv[2] == '\0' || *ep != '\0') {
-		// parameter wasn't a number, or was empty
-		fprintf(stderr, "%s - not a number\n", argv[2]);
-		usage();
-	}
-        if ((errno == ERANGE && p == ULONG_MAX) || (p > USHRT_MAX)) {
-		/* It's a number, but it either can't fit in an unsigned
-		 * long, or is too big for an unsigned short
-		 */
-		 
-		 /*
-		fprintf(stderr, "%s - value out of range\n", argv[2]);
-		usage();
-	}
-	// now safe to do this
-	port = p;
-	*/
+	strcpy(buffer, argv[1]);
+	port = hash(buffer);
 
 	/* set up TLS */
 	if (tls_init() == -1)
@@ -111,12 +89,13 @@ int main(int argc, char *argv[])
 	/*
 	 * first set up "server_sa" to be the location of the server
 	 */
+	char localhost[] = "127.0.0.1";
 	memset(&server_sa, 0, sizeof(server_sa));
 	server_sa.sin_family = AF_INET;
 	server_sa.sin_port = htons(port);
-	server_sa.sin_addr.s_addr = inet_addr(argv[1]);
+	server_sa.sin_addr.s_addr = inet_addr(localhost);
 	if (server_sa.sin_addr.s_addr == INADDR_NONE) {
-		fprintf(stderr, "Invalid IP address %s\n", argv[1]);
+		fprintf(stderr, "Invalid IP address %s\n", localhost);
 		usage();
 	}
 
@@ -176,11 +155,18 @@ int main(int argc, char *argv[])
 		i = tls_close(tls_ctx);
 	} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
 	
+	//get filesize from proxy
+	int size = -1;
+	r = tls_read(tls_ctx, &size, sizeof(size));
+	printf("Client: File size is %i bytes\n", size);
+	char fileBuffer[size];
+	
+	//get file from proxy
 	r = -1;
 	rc = 0;
-	maxread = sizeof(buffer) - 1; /* leave room for a 0 byte */
+	maxread = sizeof(fileBuffer) - 1;
 	while ((r != 0) && rc < maxread) {
-		r = tls_read(tls_ctx, buffer + rc, maxread - rc);
+		r = tls_read(tls_ctx, fileBuffer + rc, maxread - rc);
 		if (r == TLS_WANT_POLLIN || r == TLS_WANT_POLLOUT)
 			continue;
 		if (r < 0) {
@@ -188,13 +174,8 @@ int main(int argc, char *argv[])
 		} else
 			rc += r;
 	}
-	/*
-	 * we must make absolutely sure buffer has a terminating 0 byte
-	 * if we are to use it as a C string
-	 */
-	buffer[rc] = '\0';
-
-	printf("Server sent:  %s",buffer);
+	
+	printf("%s\n", fileBuffer);
 	
 	close(sd);
 	return(0);

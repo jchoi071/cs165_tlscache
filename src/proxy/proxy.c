@@ -15,6 +15,12 @@
 #include <tls.h>
 #include <openssl/sha.h>
 
+struct FileCache
+{
+	char name[80];
+	char *cache;
+};
+
 static void usage()
 {
 	extern char * __progname;
@@ -181,6 +187,8 @@ int main(int argc,  char *argv[])
 		    "                                                                                ",
 		    sizeof(buffer));
 
+
+		//read filename from client
 		r = -1;
 		rc = 0;
 		maxread = sizeof(buffer) - 1; /* leave room for a 0 byte */
@@ -198,47 +206,7 @@ int main(int argc,  char *argv[])
 		 * if we are to use it as a C string
 		 */
 		buffer[rc] = '\0';
-		close(clientsd);
 		
-		
-		//Bloom filter
-		char temp, found = 1;
-		char hash[SIZE], match[SIZE]; 
-		SHA512(buffer, sizeof(buffer), hash);
-
-		for (int a = 0; a < SIZE; ++a)
-		{
-			match[a] = 0;
-			temp = hash[a] & bloomFilter[a];
-			if (temp == hash[a])
-			{
-				match[a] = 1;
-			}
-		}
-		
-		for (int b = 0; b < SIZE; ++b)
-		{
-			if (match[b] <= 0)
-			{
-				found = 0;
-				break;
-			}
-		}
-		
-		if (found <= 0)
-		{
-			printf("Proxy %i: File %s not found, adding to filter\n", port, buffer);
-			for (int c = 0; c < SIZE; ++c)
-			{
-				bloomFilter[c] = hash[c] | bloomFilter[c];
-			}
-		}
-		else
-		{
-			printf("Proxy %i: File %s found in filter\n", port, buffer);
-		}
-		
-
 		// connect as client to the server
 		
 		struct sockaddr_in server_sa;
@@ -282,41 +250,114 @@ int main(int argc,  char *argv[])
 				errx(1, "tls handshake failed (%s)", tls_error(tls_ctx_s));
 		} while(j == TLS_WANT_POLLIN || j == TLS_WANT_POLLOUT);
 
+		//Bloom filter
+		char temp, found = 1;
+		char hash[SIZE], match[SIZE]; 
+		SHA512(buffer, sizeof(buffer), hash);
 
-
-		/*
-		 * write the message to the client, being sure to
-		 * handle a short write, or being interrupted by
-		 * a signal before we could write anything.
-		 */
-		
-		//strlcpy(buffer,
-		//	"All's well that ends well... \n",
-		//	sizeof(buffer));
-		
-		w = 0;
-		written = 0;
-		while (written < strlen(buffer)) {
-			w = tls_write(tls_ctx_s, buffer + written,
-			    strlen(buffer) - written);
-			struct sockaddr_in server_sa;
-			if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
-				continue;
-
-			if (w < 0) {
-				errx(1, "TLS write failed (%s)", tls_error(tls_ctx_s));
+		for (int a = 0; a < SIZE; ++a)
+		{
+			match[a] = 0;
+			temp = hash[a] & bloomFilter[a];
+			if (temp == hash[a])
+			{
+				match[a] = 1;
 			}
-			else
-				written += w;
 		}
-		i = 0;
-		do {
-			i = tls_close(tls_ctx_s);
-		} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
-
 		
-		//}
+		for (int b = 0; b < SIZE; ++b)
+		{
+			if (match[b] <= 0)
+			{
+				found = 0;
+				break;
+			}
+		}
+		
+		if (found <= 0)
+		{
+			printf("Proxy %i: File %s not found in filter\n", port, buffer);
+			
+			READFILE:
+			
+			//send filename to server
+			w = 0;
+			written = 0;
+			while (written < strlen(buffer)) {
+				w = tls_write(tls_ctx_s, buffer + written,
+					strlen(buffer) - written);
+				struct sockaddr_in server_sa;
+				if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
+					continue;
+
+				if (w < 0) {
+					errx(1, "TLS write failed (%s)", tls_error(tls_ctx_s));
+				}
+				else
+					written += w;
+			}
+			i = 0;
+			do {
+				i = tls_close(tls_ctx_s);
+			} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
+			
+			//get file size from server
+			int size = 0;
+			r = tls_read(tls_ctx_s, &size, sizeof(size));
+			//printf("Proxy: size = %i\n", size);
+			char fileBuffer[size];
+			
+			if (size > 0)
+			{
+				printf("Proxy %i: File %s exists, adding to filter\n", port, buffer);
+				for (int c = 0; c < SIZE; ++c)
+				{
+					bloomFilter[c] = hash[c] | bloomFilter[c];
+				}
+				
+				//read file from server
+				r = -1;
+				rc = 0;
+				maxread = sizeof(fileBuffer) - 1;
+				while ((r != 0) && rc < maxread) {
+					r = tls_read(tls_ctx_s, fileBuffer + rc, maxread - rc);
+					if (r == TLS_WANT_POLLIN || r == TLS_WANT_POLLOUT)
+						continue;
+					if (r < 0) {
+						err(1, "tls_read failed (%s)", tls_error(tls_ctx_s));
+					} else
+						rc += r;
+				}
+				
+				//send file size to client
+				w = tls_write(tls_cctx, &size, sizeof(size));
+				
+				//send file to client
+				w = 0;
+				written = 0;
+				while (written < strlen(fileBuffer)) {
+					w = tls_write(tls_cctx, fileBuffer + written,
+						strlen(fileBuffer) - written);
+					struct sockaddr_in server_sa;
+					if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
+						continue;
+
+					if (w < 0) {
+						errx(1, "TLS write failed (%s)", tls_error(tls_cctx));
+					}
+					else
+						written += w;
+				}
+			}
+		}
+		else
+		{
+			printf("Proxy %i: File %s found in filter\n", port, buffer);
+			goto READFILE;
+		}
+
 		close(clientsd);
+
 	}
 	return (0);
 }

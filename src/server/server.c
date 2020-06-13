@@ -40,7 +40,6 @@ int main(int argc,  char *argv[])
 	struct tls_config *tls_cfg = NULL; // TLS config
 	struct tls *tls_ctx = NULL; // TLS context
 	struct tls *tls_cctx = NULL; // client's TLS context
-
 	/*
 	 * first, figure out what port we will listen on - it should
 	 * be our first parameter.
@@ -178,34 +177,61 @@ int main(int argc,  char *argv[])
 			buffer[rc] = '\0';
 
 			printf("Server received:  %s\n",buffer);
-
-			/*
-			 * write the message to the client, being sure to
-			 * handle a short write, or being interrupted by
-			 * a signal before we could write anything.
-			 */
-			w = 0;
-			written = 0;
-			while (written < strlen(buffer)) {
-				w = tls_write(tls_cctx, buffer + written,
-				    strlen(buffer) - written);
-
-				if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
-					continue;
-
-				if (w < 0) {
-					errx(1, "TLS write failed (%s)", tls_error(tls_cctx));
+			FILE *file;
+			int size = 0;
+			char fileChar = 0;
+			int pos = 0;
+			
+			if (access(buffer, R_OK) != -1)
+			{
+				printf("Server: file %s exists, sending now\n", buffer);
+				file = fopen(buffer, "r");
+				fseek(file, 0L, SEEK_END);
+				size = ftell(file);
+				rewind(file);
+				printf("Server: File size is %i bytes\n", size);
+				
+				char fileBuffer[size];
+				while (fileChar != EOF)
+				{
+					fileChar = fgetc(file);
+					fileBuffer[pos] = fileChar;
+					++pos;
 				}
-				else
-					written += w;
-			}
-			i = 0;
-			do {
-				i = tls_close(tls_cctx);
-			} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
+				
+				//send file size to proxy
+				w = tls_write(tls_cctx, &size, sizeof(size));
+				
+				//send file to proxy
+				w = 0;
+				written = 0;
+				while (written < strlen(fileBuffer)) {
+					w = tls_write(tls_cctx, fileBuffer + written,
+						strlen(fileBuffer) - written);
 
-			close(clientsd);
-			exit(0);
+					if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
+						continue;
+
+					if (w < 0) {
+						errx(1, "TLS write failed (%s)", tls_error(tls_cctx));
+					}
+					else
+						written += w;
+				}
+				i = 0;
+				do {
+					i = tls_close(tls_cctx);
+				} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
+
+				close(clientsd);
+				fclose(file);
+			}
+			else
+			{
+				printf("Server: file %s does not exist\n", buffer);
+				w = tls_write(tls_cctx, &size, sizeof(size));
+			}
+
 		}
 		close(clientsd);
 	}
