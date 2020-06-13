@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <tls.h>
+#include <sys/stat.h>
 
 static void usage()
 {
@@ -181,18 +182,22 @@ int main(int argc,  char *argv[])
 			int size = 0;
 			char fileChar = 0;
 			int pos = 0;
+			char filePath[160];
+			strcpy(filePath, "serverfiles/");
+			strcat(filePath, buffer);
 			
-			if (access(buffer, R_OK) != -1)
+			
+			if (access(filePath, R_OK) != -1)
 			{
 				printf("Server: file %s exists, sending now\n", buffer);
-				file = fopen(buffer, "r");
+				file = fopen(filePath, "r");
 				fseek(file, 0L, SEEK_END);
 				size = ftell(file);
-				rewind(file);
 				printf("Server: File size is %i bytes\n", size);
+				rewind(file);
 				
 				char fileBuffer[size];
-				while (fileChar != EOF)
+				while (pos < size)
 				{
 					fileChar = fgetc(file);
 					fileBuffer[pos] = fileChar;
@@ -200,7 +205,7 @@ int main(int argc,  char *argv[])
 				}
 				
 				//send file size to proxy
-				w = tls_write(tls_cctx, &size, sizeof(size));
+				w = tls_write(tls_cctx, &size, 4);
 				
 				//send file to proxy
 				w = 0;

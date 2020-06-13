@@ -15,12 +15,6 @@
 #include <tls.h>
 #include <openssl/sha.h>
 
-struct FileCache
-{
-	char name[80];
-	char *cache;
-};
-
 static void usage()
 {
 	extern char * __progname;
@@ -47,8 +41,11 @@ int main(int argc,  char *argv[])
 	struct tls_config *tls_cfg = NULL; // TLS config
 	struct tls *tls_ctx = NULL; // TLS context
 	struct tls *tls_cctx = NULL; // client's TLS context
-	const int SIZE = 64; //512 bits
-	char bloomFilter[SIZE];
+	const int HASHSIZE = 64; //512 bits
+	char bloomFilter[HASHSIZE];
+	int cacheSize = 1;
+	char **filenames = malloc(cacheSize);
+	char **fileCache = malloc(cacheSize);
 
 	/*
 	 * first, figure out what port we will listen on - it should
@@ -252,10 +249,10 @@ int main(int argc,  char *argv[])
 
 		//Bloom filter
 		char temp, found = 1;
-		char hash[SIZE], match[SIZE]; 
+		char hash[HASHSIZE], match[HASHSIZE]; 
 		SHA512(buffer, sizeof(buffer), hash);
 
-		for (int a = 0; a < SIZE; ++a)
+		for (int a = 0; a < HASHSIZE; ++a)
 		{
 			match[a] = 0;
 			temp = hash[a] & bloomFilter[a];
@@ -265,7 +262,7 @@ int main(int argc,  char *argv[])
 			}
 		}
 		
-		for (int b = 0; b < SIZE; ++b)
+		for (int b = 0; b < HASHSIZE; ++b)
 		{
 			if (match[b] <= 0)
 			{
@@ -273,7 +270,7 @@ int main(int argc,  char *argv[])
 				break;
 			}
 		}
-		
+		int size = 0;
 		if (found <= 0)
 		{
 			printf("Proxy %i: File %s not found in filter\n", port, buffer);
@@ -302,15 +299,16 @@ int main(int argc,  char *argv[])
 			} while(i == TLS_WANT_POLLIN || i == TLS_WANT_POLLOUT);
 			
 			//get file size from server
-			int size = 0;
+			size = 0;
 			r = tls_read(tls_ctx_s, &size, sizeof(size));
+			printf("Proxy %i: File size is %i\n", port, size);
 			//printf("Proxy: size = %i\n", size);
 			char fileBuffer[size];
 			
 			if (size > 0)
 			{
 				printf("Proxy %i: File %s exists, adding to filter\n", port, buffer);
-				for (int c = 0; c < SIZE; ++c)
+				for (int c = 0; c < HASHSIZE; ++c)
 				{
 					bloomFilter[c] = hash[c] | bloomFilter[c];
 				}
@@ -318,7 +316,7 @@ int main(int argc,  char *argv[])
 				//read file from server
 				r = -1;
 				rc = 0;
-				maxread = sizeof(fileBuffer) - 1;
+				maxread = size;
 				while ((r != 0) && rc < maxread) {
 					r = tls_read(tls_ctx_s, fileBuffer + rc, maxread - rc);
 					if (r == TLS_WANT_POLLIN || r == TLS_WANT_POLLOUT)
@@ -328,6 +326,19 @@ int main(int argc,  char *argv[])
 					} else
 						rc += r;
 				}
+				
+				//add new entry to file cache
+				filenames = realloc(filenames, cacheSize);
+				fileCache = realloc(fileCache, cacheSize);
+				
+				filenames[cacheSize - 1] = malloc(HASHSIZE);
+				fileCache[cacheSize - 1] = malloc(size);
+				
+				memcpy(filenames[cacheSize - 1], hash, HASHSIZE);
+				memcpy(fileCache[cacheSize - 1], fileBuffer, size);
+				
+				++cacheSize;
+				
 				
 				//send file size to client
 				w = tls_write(tls_cctx, &size, sizeof(size));
@@ -353,7 +364,48 @@ int main(int argc,  char *argv[])
 		else
 		{
 			printf("Proxy %i: File %s found in filter\n", port, buffer);
-			goto READFILE;
+			
+			found = 0;
+			
+			for (int e = 0; e < cacheSize; ++e)
+			{
+				if (memcmp(hash, filenames[e], HASHSIZE) == 0)
+				{
+					size = strlen(fileCache[e]);
+					char fileBuffer[size];
+					printf("Proxy %i: File %s found in cache\n", port, buffer);
+					memcpy(fileBuffer, fileCache[e], size);
+					
+					//send file size to client
+					w = tls_write(tls_cctx, &size, sizeof(size));
+					
+					//send file to client
+					w = 0;
+					written = 0;
+					while (written < strlen(fileBuffer)) {
+						w = tls_write(tls_cctx, fileBuffer + written,
+							strlen(fileBuffer) - written);
+						struct sockaddr_in server_sa;
+						if (w == TLS_WANT_POLLIN || w == TLS_WANT_POLLOUT)
+							continue;
+
+						if (w < 0) {
+							errx(1, "TLS write failed (%s)", tls_error(tls_cctx));
+						}
+						else
+							written += w;
+					}
+					
+					found = 1;
+					break;
+				}
+			}
+						
+			if (found <= 0)
+			{
+				printf("Proxy %i: Bloom filter false positive, getting %s from server\n", port, buffer);
+				goto READFILE;
+			}
 		}
 
 		close(clientsd);

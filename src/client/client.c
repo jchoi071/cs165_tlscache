@@ -158,24 +158,42 @@ int main(int argc, char *argv[])
 	//get filesize from proxy
 	int size = -1;
 	r = tls_read(tls_ctx, &size, sizeof(size));
-	printf("Client: File size is %i bytes\n", size);
-	char fileBuffer[size];
 	
-	//get file from proxy
-	r = -1;
-	rc = 0;
-	maxread = sizeof(fileBuffer) - 1;
-	while ((r != 0) && rc < maxread) {
-		r = tls_read(tls_ctx, fileBuffer + rc, maxread - rc);
-		if (r == TLS_WANT_POLLIN || r == TLS_WANT_POLLOUT)
-			continue;
-		if (r < 0) {
-			err(1, "tls_read failed (%s)", tls_error(tls_ctx));
-		} else
-			rc += r;
+	if (size <= 0)
+	{
+		printf("Client: File size is %i bytes\n", size);
+		printf("Client: %s does not exist; no file received\n", buffer);
 	}
-	
-	printf("%s\n", fileBuffer);
+	else
+	{
+		printf("Client: File size is %i bytes\n", size);
+		char fileBuffer[size];
+		
+		//get file from proxy
+		r = -1;
+		rc = 0;
+		maxread = size;
+		while ((r != 0) && rc < maxread) {
+			r = tls_read(tls_ctx, fileBuffer + rc, maxread - rc);
+			if (r == TLS_WANT_POLLIN || r == TLS_WANT_POLLOUT)
+				continue;
+			if (r < 0) {
+				err(1, "tls_read failed (%s)", tls_error(tls_ctx));
+			} else
+				rc += r;
+		}
+		
+		char filePath[160];
+		strcpy(filePath, "clientfiles/");
+		printf("File %s received, writing to %s\n", buffer, filePath);
+		
+		strcat(filePath, buffer);
+		FILE *file = fopen(filePath, "w");
+		for (int a = 0; a < size; ++a)
+		{
+			fputc(fileBuffer[a], file);
+		}
+	}
 	
 	close(sd);
 	return(0);

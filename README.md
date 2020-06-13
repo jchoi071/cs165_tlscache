@@ -1,3 +1,5 @@
+By Ji Hoon Choi (jchoi071) and Jackson Lu (jlu080@ucr.edu)
+
 ## TLS Cache
 ------------------------
 
@@ -9,6 +11,8 @@ src/		// Client and Server code. Add your code here.
 cmake/		// CMake find script. 
 extern/		// Required third party tools and libraries- LibreSSL & CMake.
 licenses/	// Open source licenses for code used.
+build/src/serverfiles // Files that the server reads.
+build/src/clientfiles // Client saves files here.
 ```
 
 
@@ -40,12 +44,13 @@ $ ./build/src/client 127.0.0.1 9999
 1. Add your code in `src/client` or `src/server`. 
 2. Go to `build/`
 3. Run `make`
-
+4. Run start.sh (see below)
 
 ### Scripts included
 --------------------------
 1. `setup.sh` should be run exactly once after you have downloaded code, and never again. It extracts and builds the dependencies in extern/, and builds and links the code in src/ with LibreSSL.
 2. `reset.sh` reverts the directory to its initial state. It does not touch `src/` or `certificates/`. Run `make clean` in `certificates/` to delete the generated certificates.
+3. 'start.sh' starts the necessary number of proxies and the server. It is in build/src.
 
 
 ### FAQ
